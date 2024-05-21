@@ -1,0 +1,20 @@
+name = "hardcache"
+version = "1.0.0"
+
+licences = ["MIT"]
+
+description = "Gleam module that provides primitives for caching key-value pairs in files and using files as caches."
+
+repository = { type = "github", user = "katekyy", repo = "hardcache" }
+links = [
+    { title = "Website", href = "https://github.com/katekyy/hardcache" },
+]
+
+target = "erlang"
+
+[dependencies]
+gleam_stdlib = ">= 0.34.0 and < 2.0.0"
+file_streams = ">= 0.4.2 and < 1.0.0"
+
+[dev-dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"

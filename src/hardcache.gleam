@@ -1,4 +1,5 @@
 import file_streams/file_error
+import file_streams/read_stream_error
 import file_streams/read_text_stream
 import file_streams/write_stream
 
@@ -13,6 +14,7 @@ pub type Cache {
 pub type CacheError {
   CacheError(String)
   FileError(file_error.FileError)
+  ReadStreamError(read_stream_error.ReadStreamError)
 }
 
 /// Creates a new cache by reading from the specified file path.
@@ -29,11 +31,25 @@ pub fn new(
 ) -> Result(Cache, CacheError) {
   case read_text_stream.open(file_path) {
     Ok(stream) ->
-      Ok(Cache(
-        file_path: file_path,
-        content: read_all(stream),
-        auto_update: auto_update,
-      ))
+      case read_all(stream) {
+        Ok(content) ->
+          Ok(Cache(
+            file_path: file_path,
+            content: content,
+            auto_update: auto_update,
+          ))
+        Error(e) -> Error(e)
+      }
+    Error(file_error.Enoent) -> {
+      case write_stream.open(file_path) {
+        Ok(stream) ->
+          case write_stream.write_string(stream, "") {
+            Error(fe) -> Error(FileError(fe))
+            _ -> new(file_path, auto_update)
+          }
+        Error(fe) -> Error(FileError(fe))
+      }
+    }
     Error(fe) -> Error(FileError(fe))
   }
 }
@@ -362,10 +378,22 @@ pub fn auto_update(cache: Cache) -> Cache {
 }
 
 @internal
-pub fn read_all(stream: read_text_stream.ReadTextStream) -> String {
+pub fn read_all(stream: read_text_stream.ReadTextStream) -> Result(
+  String,
+  CacheError,
+) {
   case read_text_stream.read_chars(stream, 1024) {
-    Ok(char) -> char <> read_all(stream)
-    Error(_) -> ""
+    Ok(char) -> {
+      case read_text_stream.close(stream) {
+        Ok(_) ->
+          case read_all(stream) {
+            Ok(next) -> Ok(char <> next)
+            e -> e
+          }
+        Error(fe) -> Error(ReadStreamError(fe))
+      }
+    }
+    Error(_) -> Ok("")
   }
 }
 

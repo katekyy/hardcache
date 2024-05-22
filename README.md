@@ -23,8 +23,7 @@ pub fn main() {
         hardcache.try_set(cache, "expensive_calculation", float.to_string(0.1 +. 0.2))
       Nil
     }
-    Ok(_) -> Nil
-    Error(_) -> Nil
+    _ -> Nil
   }
 }
 ```

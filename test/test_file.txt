@@ -1,2 +1,0 @@
-!msg=Hello, World!
-!user_secret=81924759284011

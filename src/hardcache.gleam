@@ -8,7 +8,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/string
 
 pub type Cache {
-  Cache(file_path: String, content: String, auto_update: Bool)
+  Cache(file_path: String, entries: List(#(String, String)), auto_update: Bool)
 }
 
 pub type CacheError {
@@ -35,18 +35,14 @@ pub fn new(
         Ok(content) ->
           Ok(Cache(
             file_path: file_path,
-            content: content,
+            entries: parse_entries(content),
             auto_update: auto_update,
           ))
-        Error(e) -> Error(e)
+        Error(err) -> Error(err)
       }
     Error(file_error.Enoent) -> {
-      case write_stream.open(file_path) {
-        Ok(stream) ->
-          case write_stream.write_string(stream, "") {
-            Error(fe) -> Error(FileError(fe))
-            _ -> new(file_path, auto_update)
-          }
+      case create_file(file_path) {
+        Ok(_) -> new(file_path, auto_update)
         Error(fe) -> Error(FileError(fe))
       }
     }
@@ -70,12 +66,12 @@ pub fn new(
 /// ```
 /// 
 pub fn try_remove(
-  in orig: Result(Cache, CacheError),
+  from orig: Result(Cache, CacheError),
   key key: String,
 ) -> Result(Cache, CacheError) {
   case orig {
     Ok(orig) -> remove(orig, key)
-    e -> e
+    err -> err
   }
 }
 
@@ -97,28 +93,75 @@ pub fn try_remove(
 /// // -> Ok(Cache("./example.txt", "", True))
 /// ```
 /// 
-pub fn remove(in orig: Cache, key key: String) -> Result(Cache, CacheError) {
-  case get(from: orig, key: key) {
-    Ok(Some(orig_value)) -> {
+pub fn remove(from orig: Cache, key key: String) -> Result(Cache, CacheError) {
+  case list.key_pop(orig.entries, key) {
+    Ok(#(_, [])) -> Ok(orig)
+    Ok(#(_, rest)) -> {
       let result =
         Cache(
           file_path: orig.file_path,
-          content: orig.content
-            |> string.replace(stringify_entries([#(key, orig_value)]), ""),
+          entries: rest,
           auto_update: orig.auto_update,
         )
       case result.auto_update {
-        True -> {
+        True ->
           case update(result) {
-            Ok(_) -> Ok(result)
-            Error(fe) -> Error(fe)
+            Ok(result) -> Ok(result)
+            err -> err
           }
-        }
         False -> Ok(result)
       }
     }
-    Ok(None) -> Ok(orig)
-    Error(e) -> Error(e)
+    Error(_) -> Ok(orig)
+  }
+}
+
+/// Sets a key-value pair in the list if it is not already set. 
+/// 
+/// ## Examples
+/// 
+/// ```gleam
+/// let cache =
+///   hardcache.new("./example.txt", True)
+///   |> hardcache.try_defaults(cache, [#("msg", "Hello!")])
+/// ```
+/// 
+pub fn try_defaults(
+  in orig: Result(Cache, CacheError),
+  defaults entries: List(#(String, String)),
+) -> Result(Cache, CacheError) {
+  case orig {
+    Ok(orig) -> defaults(orig, entries)
+    err -> err
+  }
+}
+
+/// Sets a key-value pair in the list if it is not already set. 
+/// 
+/// ## Examples
+/// 
+/// ```gleam
+/// let cache = case hardcache.new("./example.txt", True) {
+///   Ok(cache) -> hardcache.defaults(cache, [#("msg", "Hello!")])
+///   err -> err
+/// }
+/// ```
+/// 
+pub fn defaults(
+  in orig: Cache,
+  defaults entries: List(#(String, String)),
+) -> Result(Cache, CacheError) {
+  case entries {
+    [] -> Ok(orig)
+    [entry, ..tail] ->
+      case get(orig, entry.0) {
+        Some(_) -> defaults(orig, tail)
+        None ->
+          case set(orig, entry.0, entry.1) {
+            Ok(result) -> defaults(result, tail)
+            err -> err
+          }
+      }
   }
 }
 
@@ -139,7 +182,7 @@ pub fn try_set(
 ) -> Result(Cache, CacheError) {
   case orig {
     Ok(orig) -> set(orig, key, value)
-    e -> e
+    err -> err
   }
 }
 
@@ -162,34 +205,19 @@ pub fn set(
   key key: String,
   value value: String,
 ) -> Result(Cache, CacheError) {
-  let result = case get(from: orig, key: key) {
-    Ok(Some(orig_value)) if orig_value == value -> Ok(orig)
-    Ok(Some(orig_value)) ->
-      Ok(Cache(
-        file_path: orig.file_path,
-        content: orig.content
-          |> string.replace(
-          stringify_entries([#(key, orig_value)]),
-          stringify_entries([#(key, value)]),
-        ),
-        auto_update: orig.auto_update,
-      ))
-    Ok(None) ->
-      Ok(Cache(
-        file_path: orig.file_path,
-        content: orig.content <> stringify_entries([#(key, value)]),
-        auto_update: orig.auto_update,
-      ))
-    Error(e) -> Error(e)
-  }
-  case result {
-    Ok(result) if result.auto_update == True -> {
+  let result =
+    Cache(
+      file_path: orig.file_path,
+      entries: list.key_set(orig.entries, key, value),
+      auto_update: orig.auto_update,
+    )
+  case result.auto_update {
+    True ->
       case update(result) {
-        Ok(_) -> Ok(result)
-        Error(fe) -> Error(fe)
+        Ok(result) -> Ok(result)
+        err -> err
       }
-    }
-    _ -> result
+    False -> Ok(result)
   }
 }
 
@@ -209,7 +237,7 @@ pub fn try_set_many(
 ) -> Result(Cache, CacheError) {
   case orig {
     Ok(orig) -> set_many(orig, entries)
-    e -> e
+    err -> err
   }
 }
 
@@ -255,12 +283,12 @@ pub fn set_many(
 /// ```
 /// 
 pub fn try_get(
-  in orig: Result(Cache, CacheError),
+  from orig: Result(Cache, CacheError),
   key key: String,
 ) -> Result(Option(String), CacheError) {
   case orig {
-    Ok(orig) -> get(orig, key)
-    Error(e) -> Error(e)
+    Ok(orig) -> Ok(get(orig, key))
+    Error(err) -> Error(err)
   }
 }
 
@@ -280,22 +308,10 @@ pub fn try_get(
 /// }
 /// ```
 /// 
-pub fn get(
-  from cache: Cache,
-  key key: String,
-) -> Result(Option(String), CacheError) {
-  case
-    list.filter(
-      parse_entries(cache.content),
-      keeping: fn(entry: #(String, String)) -> Bool { entry.0 == key },
-    )
-  {
-    [entry] -> Ok(Some(entry.1))
-    [_, ..] ->
-      Error(CacheError(
-        "Found multiple values with the same key in the cache. This should never happen! Was cache's content manipulated?",
-      ))
-    [] -> Ok(None)
+pub fn get(from cache: Cache, key key: String) -> Option(String) {
+  case list.key_find(cache.entries, key) {
+    Ok(value) -> Some(value)
+    Error(_) -> None
   }
 }
 
@@ -312,12 +328,10 @@ pub fn get(
 ///   |> hardcache.try_update
 /// ```
 /// 
-pub fn try_update(
-  in orig: Result(Cache, CacheError),
-) -> Result(Cache, CacheError) {
-  case orig {
-    Ok(orig) -> update(orig)
-    Error(e) -> Error(e)
+pub fn try_update(cache: Result(Cache, CacheError)) -> Result(Cache, CacheError) {
+  case cache {
+    Ok(cache) -> update(cache)
+    err -> err
   }
 }
 
@@ -341,11 +355,15 @@ pub fn try_update(
 pub fn update(cache: Cache) -> Result(Cache, CacheError) {
   case write_stream.open(cache.file_path) {
     Ok(stream) ->
-      case write_stream.write_string(stream, cache.content) {
+      case write_stream.write_string(stream, stringify_entries(cache.entries)) {
         Ok(_) ->
           case write_stream.sync(stream) {
+            Ok(_) ->
+              case write_stream.close(stream) {
+                Ok(_) -> Ok(cache)
+                Error(fe) -> Error(FileError(fe))
+              }
             Error(fe) -> Error(FileError(fe))
-            _ -> Ok(cache)
           }
         Error(fe) -> Error(FileError(fe))
       }
@@ -358,7 +376,7 @@ pub fn update(cache: Cache) -> Result(Cache, CacheError) {
 /// ## Examples
 /// 
 /// ```gleam
-/// let cache = hardcache.new("./example", False)
+/// let cache = hardcache.new("./example.txt", False)
 /// let cache = case cache {
 ///   Ok(cache) -> Ok(hardcache.auto_update(cache))
 ///   Error(e) -> Error(e)
@@ -367,44 +385,73 @@ pub fn update(cache: Cache) -> Result(Cache, CacheError) {
 /// 
 pub fn auto_update(cache: Cache) -> Cache {
   case cache.auto_update {
+    True -> cache
     False ->
       Cache(
         file_path: cache.file_path,
-        content: cache.content,
+        entries: cache.entries,
         auto_update: True,
       )
-    True -> cache
   }
 }
 
-@internal
-pub fn read_all(stream: read_text_stream.ReadTextStream) -> Result(
-  String,
-  CacheError,
-) {
+/// Parses a string into key-value pairs.
+/// 
+/// ## Example
+/// 
+/// ```gleam
+/// hardcache.parse_entries("!key=value\n")
+/// // -> [#("key", "value")]
+/// ```
+/// 
+pub fn parse_entries(string: String) -> List(#(String, String)) {
+  string.split(string, "\n")
+  |> list.filter_map(parse_line)
+}
+
+/// Converts key-value pairs to a string.
+/// 
+/// ## Example
+/// 
+/// ```gleam
+/// hardcache.stringify_entries([#("key", "value")])
+/// // -> "!key=value\n"
+/// ```
+/// 
+pub fn stringify_entries(entries: List(#(String, String))) -> String {
+  case entries {
+    [] -> ""
+    [entry, ..tail] ->
+      "!" <> entry.0 <> "=" <> entry.1 <> "\n" <> stringify_entries(tail)
+  }
+}
+
+fn create_file(file_path: String) -> Result(Nil, file_error.FileError) {
+  case write_stream.open(file_path) {
+    Ok(stream) -> write_stream.close(stream)
+    Error(fe) -> Error(fe)
+  }
+}
+
+fn read_all(
+  stream: read_text_stream.ReadTextStream,
+) -> Result(String, CacheError) {
   case read_text_stream.read_chars(stream, 1024) {
     Ok(char) -> {
       case read_text_stream.close(stream) {
         Ok(_) ->
           case read_all(stream) {
             Ok(next) -> Ok(char <> next)
-            e -> e
+            err -> err
           }
         Error(fe) -> Error(ReadStreamError(fe))
       }
     }
-    Error(_) -> Ok("")
+    _ -> Ok("")
   }
 }
 
-@internal
-pub fn parse_entries(str: String) -> List(#(String, String)) {
-  string.split(str, "\n")
-  |> list.filter_map(parse_line)
-}
-
-@internal
-pub fn parse_line(line: String) -> Result(#(String, String), Nil) {
+fn parse_line(line: String) -> Result(#(String, String), Nil) {
   let parts = string.split(line, "=")
   case parts {
     [key, ..value] ->
@@ -418,14 +465,5 @@ pub fn parse_line(line: String) -> Result(#(String, String), Nil) {
         _ -> Error(Nil)
       }
     _ -> Error(Nil)
-  }
-}
-
-@internal
-pub fn stringify_entries(entries: List(#(String, String))) -> String {
-  case entries {
-    [] -> ""
-    [entry, ..tail] ->
-      "!" <> entry.0 <> "=" <> entry.1 <> "\n" <> stringify_entries(tail)
   }
 }

@@ -1,9 +1,8 @@
-name: test
+name: unit_test
 
 on:
   push:
     branches:
-      - master
       - main
   pull_request:
 
@@ -17,7 +16,9 @@ jobs:
           otp-version: "26.0.2"
           gleam-version: "1.1.0"
           rebar3-version: "3"
-          # elixir-version: "1.15.4"
       - run: gleam deps download
       - run: gleam test
+      - run: cd ./test
+      - run: cmp -s test_file.txt test_file_eq.txt
+      - run: cd ..
       - run: gleam format --check src test

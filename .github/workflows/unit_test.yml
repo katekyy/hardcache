@@ -16,9 +16,12 @@ jobs:
           otp-version: "26.0.2"
           gleam-version: "1.1.0"
           rebar3-version: "3"
-      - run: gleam deps download
-      - run: gleam test
-      - run: cd ./test
-      - run: cmp -s test_file.txt test_file_eq.txt
-      - run: cd ..
-      - run: gleam format --check src test
+      - name: Run Gleam tests
+        working-directory: ./
+        run: |
+          gleam deps download
+          gleam test
+          gleam format --check src test
+      - name: Test created files
+        working-directory: ./test
+        run: cmp test_file.txt test_file_eq.txt

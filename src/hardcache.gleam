@@ -304,7 +304,7 @@ pub fn try_get(
 ///   Ok(cache) ->
 ///     cache
 ///     |> hardcache.get("a")
-///   Error(e) -> Error(e)
+///   Error(_) -> option.None
 /// }
 /// ```
 /// 

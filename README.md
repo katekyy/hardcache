@@ -13,12 +13,19 @@ gleam add hardcache
 import hardcache
 
 import gleam/float
+import gleam/option
 
 pub fn main() {
-  let calculation = 0.1 + 0.2
-  let cache =
-    hardcache.new("calc", True)
-    |> hardcache.try_set(float.to_string(calculation))
+  let cache = hardcache.new("calc", True)
+  case hardcache.try_get(cache, "expensive_calculation") {
+    Ok(option.None) -> {
+      let _ =
+        hardcache.try_set(cache, "expensive_calculation", float.to_string(0.1 +. 0.2))
+      Nil
+    }
+    Ok(_) -> Nil
+    Error(_) -> Nil
+  }
 }
 ```
 

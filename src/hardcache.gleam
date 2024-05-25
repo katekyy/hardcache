@@ -6,7 +6,13 @@ import gleam/option.{type Option, None, Some}
 import gleam/string
 
 pub type Cache {
-  Cache(file_path: String, entries: List(#(String, String)), auto_update: Bool)
+  Cache(
+    file_path: String,
+    entries: List(#(String, String)),
+    auto_update: Bool,
+    decode: fn(String) -> List(#(String, String)),
+    encode: fn(List(#(String, String))) -> String,
+  )
 }
 
 pub type CacheError {
@@ -14,6 +20,7 @@ pub type CacheError {
 }
 
 /// Creates a new cache by reading from the specified file path.
+/// Uses the default encoder and decoder.
 /// 
 /// ## Examples
 /// 
@@ -25,20 +32,40 @@ pub fn new(
   path file_path: String,
   auto_update auto_update: Bool,
 ) -> Result(Cache, CacheError) {
+  new_custom_format(file_path, auto_update, default_decoder, default_encoder)
+}
+
+/// Creates a new cache by reading from the specified file path.
+/// 
+/// ## Examples
+/// 
+/// ```gleam
+/// let cache =
+///   hardcache.new_custom_format("./example.txt", True, hardcache.default_decoder, hardcache.default_encoder)
+/// ```
+/// 
+pub fn new_custom_format(
+  path file_path: String,
+  auto_update auto_update: Bool,
+  decoder decode: fn(String) -> List(#(String, String)),
+  encoder encode: fn(List(#(String, String))) -> String,
+) -> Result(Cache, CacheError) {
   case file_stream.open_read(file_path) {
     Ok(stream) ->
       case read_all(stream) {
         Ok(content) ->
           Ok(Cache(
             file_path: file_path,
-            entries: parse_entries(content),
+            entries: decode(content),
             auto_update: auto_update,
+            decode: decode,
+            encode: encode,
           ))
         Error(err) -> Error(err)
       }
     Error(file_stream_error.Enoent) -> {
       case create_file(file_path) {
-        Ok(_) -> new(file_path, auto_update)
+        Ok(_) -> new_custom_format(file_path, auto_update, decode, encode)
         Error(fe) -> Error(FileError(fe))
       }
     }
@@ -98,6 +125,8 @@ pub fn remove(from orig: Cache, key key: String) -> Result(Cache, CacheError) {
           file_path: orig.file_path,
           entries: rest,
           auto_update: orig.auto_update,
+          decode: orig.decode,
+          encode: orig.encode,
         )
       case result.auto_update {
         True ->
@@ -206,6 +235,8 @@ pub fn set(
       file_path: orig.file_path,
       entries: list.key_set(orig.entries, key, value),
       auto_update: orig.auto_update,
+      decode: orig.decode,
+      encode: orig.encode,
     )
   case result.auto_update {
     True ->
@@ -406,9 +437,7 @@ pub fn update(cache: Cache) -> Result(Cache, CacheError) {
   case file_stream.open_write(cache.file_path) {
     Ok(stream) ->
       case
-        file_stream.write_bytes(stream, <<
-          stringify_entries(cache.entries):utf8,
-        >>)
+        file_stream.write_bytes(stream, <<cache.encode(cache.entries):utf8>>)
       {
         Ok(_) ->
           case file_stream.sync(stream) {
@@ -445,6 +474,8 @@ pub fn auto_update(cache: Cache) -> Cache {
         file_path: cache.file_path,
         entries: cache.entries,
         auto_update: True,
+        decode: cache.decode,
+        encode: cache.encode,
       )
   }
 }
@@ -454,11 +485,11 @@ pub fn auto_update(cache: Cache) -> Cache {
 /// ## Example
 /// 
 /// ```gleam
-/// hardcache.parse_entries("!key=value\n")
+/// hardcache.default_decoder("!key=value\n")
 /// // -> [#("key", "value")]
 /// ```
 /// 
-pub fn parse_entries(string: String) -> List(#(String, String)) {
+pub fn default_decoder(string: String) -> List(#(String, String)) {
   string.split(string, "\n")
   |> list.filter_map(parse_line)
 }
@@ -468,15 +499,15 @@ pub fn parse_entries(string: String) -> List(#(String, String)) {
 /// ## Example
 /// 
 /// ```gleam
-/// hardcache.stringify_entries([#("key", "value")])
+/// hardcache.default_encoder([#("key", "value")])
 /// // -> "!key=value\n"
 /// ```
 /// 
-pub fn stringify_entries(entries: List(#(String, String))) -> String {
+pub fn default_encoder(entries: List(#(String, String))) -> String {
   case entries {
     [] -> ""
     [entry, ..tail] ->
-      "!" <> entry.0 <> "=" <> entry.1 <> "\n" <> stringify_entries(tail)
+      "!" <> entry.0 <> "=" <> entry.1 <> "\n" <> default_encoder(tail)
   }
 }
 

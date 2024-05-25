@@ -1,7 +1,7 @@
 import gleeunit
 import gleeunit/should
 
-import file_streams/file_error
+import file_streams/file_stream_error
 
 import hardcache
 
@@ -47,7 +47,7 @@ pub fn non_existent_cache_test() {
 
   hardcache.new("./test/doesnt_exist/test_file.txt", True)
   |> hardcache.try_get("test")
-  |> should.equal(Error(hardcache.FileError(file_error.Enoent)))
+  |> should.equal(Error(hardcache.FileError(file_stream_error.Enoent)))
 }
 
 pub fn pair_parsing_test() {

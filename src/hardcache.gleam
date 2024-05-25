@@ -1,7 +1,5 @@
-import file_streams/file_error
-import file_streams/read_stream_error
-import file_streams/read_text_stream
-import file_streams/write_stream
+import file_streams/file_stream
+import file_streams/file_stream_error
 
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -12,8 +10,7 @@ pub type Cache {
 }
 
 pub type CacheError {
-  FileError(file_error.FileError)
-  ReadStreamError(read_stream_error.ReadStreamError)
+  FileError(file_stream_error.FileStreamError)
 }
 
 /// Creates a new cache by reading from the specified file path.
@@ -28,7 +25,7 @@ pub fn new(
   path file_path: String,
   auto_update auto_update: Bool,
 ) -> Result(Cache, CacheError) {
-  case read_text_stream.open(file_path) {
+  case file_stream.open_read(file_path) {
     Ok(stream) ->
       case read_all(stream) {
         Ok(content) ->
@@ -39,7 +36,7 @@ pub fn new(
           ))
         Error(err) -> Error(err)
       }
-    Error(file_error.Enoent) -> {
+    Error(file_stream_error.Enoent) -> {
       case create_file(file_path) {
         Ok(_) -> new(file_path, auto_update)
         Error(fe) -> Error(FileError(fe))
@@ -406,13 +403,17 @@ pub fn try_update(cache: Result(Cache, CacheError)) -> Result(Cache, CacheError)
 /// ```
 /// 
 pub fn update(cache: Cache) -> Result(Cache, CacheError) {
-  case write_stream.open(cache.file_path) {
+  case file_stream.open_write(cache.file_path) {
     Ok(stream) ->
-      case write_stream.write_string(stream, stringify_entries(cache.entries)) {
+      case
+        file_stream.write_bytes(stream, <<
+          stringify_entries(cache.entries):utf8,
+        >>)
+      {
         Ok(_) ->
-          case write_stream.sync(stream) {
+          case file_stream.sync(stream) {
             Ok(_) ->
-              case write_stream.close(stream) {
+              case file_stream.close(stream) {
                 Ok(_) -> Ok(cache)
                 Error(fe) -> Error(FileError(fe))
               }
@@ -479,25 +480,25 @@ pub fn stringify_entries(entries: List(#(String, String))) -> String {
   }
 }
 
-fn create_file(file_path: String) -> Result(Nil, file_error.FileError) {
-  case write_stream.open(file_path) {
-    Ok(stream) -> write_stream.close(stream)
+fn create_file(
+  file_path: String,
+) -> Result(Nil, file_stream_error.FileStreamError) {
+  case file_stream.open_write(file_path) {
+    Ok(stream) -> file_stream.close(stream)
     Error(fe) -> Error(fe)
   }
 }
 
-fn read_all(
-  stream: read_text_stream.ReadTextStream,
-) -> Result(String, CacheError) {
-  case read_text_stream.read_chars(stream, 1024) {
+fn read_all(stream: file_stream.FileStream) -> Result(String, CacheError) {
+  case file_stream.read_chars(stream, 1024) {
     Ok(char) -> {
-      case read_text_stream.close(stream) {
+      case file_stream.close(stream) {
         Ok(_) ->
           case read_all(stream) {
             Ok(next) -> Ok(char <> next)
             err -> err
           }
-        Error(fe) -> Error(ReadStreamError(fe))
+        Error(fe) -> Error(FileError(fe))
       }
     }
     _ -> Ok("")

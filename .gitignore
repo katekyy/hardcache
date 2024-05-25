@@ -2,3 +2,7 @@
 *.ez
 /build
 erl_crash.dump
+
+# tests
+/test/test_file*
+!/test/test_file_eq*

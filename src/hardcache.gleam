@@ -12,7 +12,6 @@ pub type Cache {
 }
 
 pub type CacheError {
-  CacheError(String)
   FileError(file_error.FileError)
   ReadStreamError(read_stream_error.ReadStreamError)
 }
@@ -50,7 +49,7 @@ pub fn new(
   }
 }
 
-/// Sets a key-value pair in the cache.
+/// Sets a key-value pair in the cache or propagates the error.
 /// 
 /// ## Examples
 /// 
@@ -116,7 +115,7 @@ pub fn remove(from orig: Cache, key key: String) -> Result(Cache, CacheError) {
   }
 }
 
-/// Sets a key-value pair in the list if it is not already set. 
+/// Sets a key-value pair in the list if it is not already set or propagates the error. 
 /// 
 /// ## Examples
 /// 
@@ -165,7 +164,7 @@ pub fn defaults(
   }
 }
 
-/// Sets a key-value pair in the cache.
+/// Sets a key-value pair in the cache or propagates the error.
 /// 
 /// ## Examples
 /// 
@@ -221,7 +220,7 @@ pub fn set(
   }
 }
 
-/// Sets multiple key-value pairs in the cache.
+/// Sets multiple key-value pairs in the cache or propagates the error.
 /// 
 /// ## Examples
 /// 
@@ -269,7 +268,61 @@ pub fn set_many(
   }
 }
 
-/// Sets multiple key-value pairs in the cache.
+/// Gets a string assigned to the `key` (2nd argument) or returns the string `or` (3rd argument) when unsuccessful
+/// (when the 1st argument is a `CacheError` or when there's no value assigned to the `key`).
+/// 
+/// ## Example
+/// 
+/// ```gleam
+/// let cache =
+///   hardcache.new("./non_existent_directory/example.txt", True)
+///   |> hardcache.try_set("test", "something important") // propagates the error from `new`
+/// // -> Error(FileError(Enoent))
+/// let a =
+///   cache
+///   |> hardcache.get_unwrap("test", "(none)")
+/// // -> "(none)"
+/// ```
+/// 
+pub fn try_get_unwrap(
+  in orig: Result(Cache, CacheError),
+  key key: String,
+  or when_none_or_error: String,
+) -> String {
+  case try_get(orig, key) {
+    Ok(option_string) ->
+      case option_string {
+        Some(string) -> string
+        None -> when_none_or_error
+      }
+    Error(_) -> when_none_or_error
+  }
+}
+
+/// Gets a string assigned to the `key` (2nd argument) or returns the string `or` (3rd argument) when there's no value assigned to the `key`.
+/// 
+/// ## Example
+/// 
+/// ```gleam
+/// let cache = hardcache.new("./example.txt", True)
+/// let a =
+///   cache
+///   |> hardcache.get_unwrap("test", "(none)")
+/// // -> "(none)"
+/// ```
+/// 
+pub fn get_unwrap(
+  in orig: Cache,
+  key key: String,
+  or when_none: String,
+) -> String {
+  case get(orig, key) {
+    Some(string) -> string
+    None -> when_none
+  }
+}
+
+/// Sets multiple key-value pairs in the cache or propagates the error.
 /// 
 /// ## Examples
 /// 
@@ -315,7 +368,7 @@ pub fn get(from cache: Cache, key key: String) -> Option(String) {
   }
 }
 
-/// Updates the cache file with the current cache content.
+/// Updates the cache file with the current cache content or propagates the error.
 /// 
 /// ## Examples
 /// 

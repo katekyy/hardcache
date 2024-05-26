@@ -118,7 +118,6 @@ pub fn try_remove(
 /// 
 pub fn remove(from orig: Cache, key key: String) -> Result(Cache, CacheError) {
   case list.key_pop(orig.entries, key) {
-    Ok(#(_, [])) -> Ok(orig)
     Ok(#(_, rest)) -> {
       let result =
         Cache(

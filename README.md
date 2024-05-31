@@ -19,6 +19,7 @@ pub fn main() {
     Ok(option.None) -> {
       let _ =
         hardcache.try_set(cache, "expensive_calculation", float.to_string(0.1 +. 0.2))
+      Nil
     }
     _ -> Nil
   }
